@@ -5,12 +5,14 @@
 {% block largeheader %}Performance Data Metrics{% endblock %}
 
 {% block nav1 %}{{ block.super }}{% endblock %}
+{% block nav2 %}<a href="{% url status.views.perfdata %}">Performance Data</a>{% endblock %}
 {% load adagiostags %}
 
 {% block content %}
     <table class="table table-condensed searchtable well" style="font-size:12px;" >
         <thead>
         <tr>
+            <th class="small"></th>
             <th class="small"></th>
             <th>host</th>
             <th class="small"></th>
@@ -28,6 +30,9 @@
     {% for service in perfdata %}
         {% for i in service.metrics %}
             <tr class=mainrow>
+                <td class="selectable small">
+                    <input type=checkbox class="chkbox" name="graph" value="{{ service.host_name }},{{ service.description }},{{ i.label }}">
+                </td>
                 <td class="small"> <div class="circle state_{{ service.host_state }}"></div></td>
                 <td>{{ service.host_name }}</td>
                 <td class="small"> <div class="circle state_{{ service.state }}"></div></td>
@@ -40,10 +45,26 @@
                 <td>{{ i.max }}   </td>
                 <td class="nowrap"><div class="circle state_{{ i.get_status }}"> </div></td>
                 <td>
-                    <a href="{% url pnp.views.pnp %}/image?host={{ host.name }}&source={{ i.i }}&srv={{ service_description }}" class="preview" title="pnp4nagios graph"><i class="glyph glyph-charts"></i></a>
+                    <a href="{% url pnp.views.pnp %}/image?host={{ service.host_name }}&source={{ forloop.counter0 }}&srv={{ service.description }}" class="preview" title="{{ service.description }} {{ i.label }}"><i class="glyph glyph-charts"></i></a>
                 </td>
             </tr>
         {% endfor %}
     {% endfor %}
     </table>
+{% endblock %}
+
+{% block footer %}
+    {{ block.super }}
+
+    <script>
+        // Perfomance Graph Preview on hover
+        $("a.preview").popover({
+        placement: 'left',
+            trigger: 'hover',
+            template: '<div class="popover"><div class="arrow"></div><div class="popover-inner" style="width: 600px"><h3 class="popover-title"></h3><div class="popover-content" style="min-height: 200px"><p></p></div></div></div>',
+            content: function() {
+                return "<img src='"+ $(this)[0].href +"' alt='Image preview' />";
+            }
+        });
+    </script>
 {% endblock %}

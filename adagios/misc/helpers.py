@@ -18,23 +18,16 @@ from socket import gethostbyname_ex
 import adagios.settings
 
 
-_config = Parsers.config(adagios.settings.nagios_config)
-_config.parse()
-maincfg_values = _config.maincfg_values
-cfg_file = _config.cfg_file
+#_config = Parsers.config(adagios.settings.nagios_config)
+#_config.parse()
+Model.Timeperiod.objects.all
+maincfg_values = Model.config.maincfg_values
+cfg_file = Model.config.cfg_file
 version = __version__
 
 def _get_dict(x):
     x.__delattr__('objects')
     return x._original_attributes
-#__dict__
-#_get_dict = lambda x: del (x.objects)
-#timeperiods = map(_get_dict, Model.Timeperiod.objects.all) 
-#hosts = map(_get_dict, Model.Host.objects.all )
-#contacts = map(_get_dict, Model.Contact.objects.all )
-#services = map(_get_dict, Model.Service.objects.all )
-#contactgroups = map(_get_dict, Model.Contactgroup.objects.all )
-#hostgroups = map(_get_dict, Model.Hostgroup.objects.all )
 
 def get_objects(object_type=None, with_fields="id,shortname,object_type", **kwargs):
     ''' Get any type of object definition in a dict-compatible fashion
@@ -52,6 +45,8 @@ def get_objects(object_type=None, with_fields="id,shortname,object_type", **kwar
             List of ObjectDefinition
     '''
     tmp = Model.ObjectDefinition.objects.filter(object_type=object_type, **kwargs)
+    with_fields = with_fields.split(',')
+    #return map(lambda x: _get_dict(x), tmp)
     return map( lambda x: object_to_dict(x, attributes=with_fields), tmp)
 
 def servicestatus(with_fields="host_name,service_description,current_state,plugin_output"):
@@ -72,7 +67,9 @@ def object_to_dict(object, attributes="id,shortname,object_type"):
     """ Takes in a specific object definition, returns a hash maps with "attributes" as keys"""
     result = {}
     if not attributes or attributes == '*':
-        attributes=object.keys()
+        return object._original_attributes
+    elif isinstance(attributes,list):
+        pass
     else:
         attributes=attributes.split(',')
     for k in attributes:
@@ -82,14 +79,25 @@ def get_object(id,with_fields="id,shortname,object_type"):
     '''Returns one specific ObjectDefinition'''
     o = Model.ObjectDefinition.objects.get_by_id(id)
     return object_to_dict(o,attributes=with_fields)
-def delete_object(object_id, cascade=False):
-    '''Delete one specific ObjectDefinition'''
-    try:
-        o = Model.ObjectDefinition.objects.get_by_id(id)
-        o.delete(cascade=cascade)
-        return True
-    except Exception:
-        return False
+
+
+def delete_object(object_id, recursive=False, cleanup_related_items=True):
+    """ Delete one specific ObjectDefinition
+
+    Arguments:
+      object_id             -- The pynag id of the definition you want to delete
+      cleanup_related_items -- If True, clean up references to this object in other definitions
+      recursive             -- If True, also remove other objects that depend on this one.
+                               For example, when deleting a host, also delete all its services
+    Returns:
+      True on success. Raises exception on failure.
+    """
+
+    o = Model.ObjectDefinition.objects.get_by_id(object_id)
+    o.delete(recursive=recursive, cleanup_related_items=cleanup_related_items)
+    return True
+
+
 def get_host_names(invalidate_cache=False):
     """ Returns a list of all hosts """
     if invalidate_cache is True:
@@ -183,14 +191,14 @@ def set_maincfg_attribute(attribute,new_value, old_value='None', append=False):
 		True	-- If any changes were made
 		False	-- If no changes were made
 	"""
-    filename = _config.cfg_file
+    filename = Model.config.cfg_file
     if old_value.lower() == 'none': old_value=None
     if new_value.lower() == 'none': new_value=None
     if filename.lower() == 'none': filename=None
     if append.lower() == 'false': append=False
     elif append.lower() == 'true': append=True
     elif append.lower() == 'none': append=None
-    return _config._edit_static_file(attribute=attribute,new_value=new_value,old_value=old_value,filename=filename, append=append)
+    return Model._edit_static_file(attribute=attribute,new_value=new_value,old_value=old_value,filename=filename, append=append)
 
 def reload_nagios():
     """ Reloads nagios. Returns "Success" on Success """
@@ -248,7 +256,7 @@ def add_object(object_type, filename=None, **kwargs):
     my_object.save()
     return {"filename":my_object.get_filename(), "raw_definition":str(my_object)}
 
-def check_command(host_name, service_description, check_command=None,**kwargs):
+def check_command(host_name, service_description, name=None,check_command=None,**kwargs):
     """ Get al
         Arguments:
             host_name           -- Name of host
@@ -265,35 +273,28 @@ def check_command(host_name, service_description, check_command=None,**kwargs):
               '$SERVICE_MACROx$': ...,
             }
     """
-    if service_description in (None,'',u''):
+    if host_name in ('None',None,''):
+        my_object = Model.Service.objects.get_by_name(name)
+    elif service_description in ('None',None,'',u''):
         my_object = Model.Host.objects.get_by_shortname(host_name)
     else:
         short_name = "%s/%s" % (host_name, service_description)
         my_object = Model.Service.objects.get_by_shortname(short_name)
-    if check_command is None:
+    if check_command in (None,'','None'):
         command = my_object.get_effective_check_command()
     else:
         command = Model.Command.objects.get_by_shortname(check_command)
+
+    # Lets put all our results in a nice little dict
+    macros = {}
+    macros['check_command'] = command.command_name
+    macros['original_command_line'] = command.command_line
+    macros['effective_command_line'] = my_object.get_effective_command_line()
+
+    # Lets get all macros that this check command defines:
     regex = re.compile("(\$\w+\$)")
     macronames = regex.findall( command.command_line )
-
-    # macros is the variable we will be returning.
-    # First populate it with all macros from the check_command
-    macros = {}
     for i in macronames:
-        macros[i] = my_object.get_macro(i)
-        if macros[i] is None:
-            macros[i] = ''
-    # If any kwargs are specified, lets overwrite macros here:
-    for k,v in kwargs.items():
-        if k in macros:
-            macros[k] = v
+        macros[i] = my_object.get_macro(i) or ''
 
-    command_line = command.command_line
-    for k,v in macros.items():
-        if v is None:
-            v = ''
-        command_line = command_line.replace(k, v)
-    macros['effective_command_line'] = command_line
-    macros['original_command_line'] = command.command_line
     return macros

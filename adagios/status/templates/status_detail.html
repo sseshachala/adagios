@@ -21,21 +21,6 @@
 {% block content %}
     <div class="span9" id="maincontent_left_side">
 
-    <div class="hide" id="servicestatus">
-        <table>
-            <tbody>
-            <tr>
-                <td>
-                    <input class="chkbox {{ service.tags }}"  style="margin: -2px; padding: 0px;" type="checkbox" checked="checked">
-                    <input type="hidden" class="input_hostname" name="host_name" value="{{ host_name }}">
-                    <input type="hidden" class="input_service_description" name="service_description" value="{{ service_description }}">
-
-                </td>
-            </tr>
-            </tbody>
-        </table>
-    </div>
-
     <ul class="nav nav-tabs" id="objecttab">
         <li><a href="#general" data-toggle="tab">General</a></li>
         <li><a href="#information" data-toggle="tab">Information</a></li>
@@ -120,7 +105,7 @@
                                     <td>{{ i.min }}   </td>
                                     <td>{{ i.max }}   </td>
                                     <td>
-                                        <a href="{% url pnp.views.pnp %}/image?host={{ host.name }}&source={{ i.i }}&srv={{ service_description }}" class="preview" title="pnp4nagios graph"><i class="glyph glyph-charts"></i></a>
+                                        <a href="{% url pnp.views.pnp %}/image?host={{ host.name }}&source={{ i.i }}&srv={{ service_description }}" class="preview" title="{{ service_description }} {{ i.label }}"><i class="glyph glyph-charts"></i></a>
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -150,20 +135,89 @@
             </tr>
             {% endfor %}
         </table>
+
+        <!-- servicestatus has to be here for the action buttons to work -->
+        <div  id="servicestatus">
+            <table>
+                <tbody>
+                <tr>
+                    <td class="selectable">
+                        <input class="chkbox {{ service.tags }}"  style="margin: -2px; padding: 0px;" type="checkbox" checked="checked">
+                        <input type="hidden" class="input_hostname" name="host_name" value="{{ host_name }}">
+                        <input type="hidden" class="input_service_description" name="service_description" value="{{ service_description }}">
+
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
     </div>
 
     <div class="tab-pane" id="information">
-        <table class="table">
+        <p>
+            This {{ my_object.object_type }} is checked every <a href="#">{{ my_object.check_interval }}</a> minutes.
 
+            When a problem occurs it will be checked <a href="#">{{ my_object.max_check_attempts }}</a> times
+
+            every <a href="#">{{ my_object.retry_interval }}</a> minutes before going to
+            hard state and start sending out notifications.
+        </p>
+
+        {% if my_object.notes %}
+        <p>
+            <b>Notes:</b> {{ my_object.notes }}
+        </p>
+        {% endif %}
+
+        <table class=table>
             <tr>
-                <td>External Links </td>
+                <td>Last Check</td>
                 <td>
-                    {% if my_object.notes_url_expanded %}
-                        <a href="{{ my_object.notes_url_expanded }}">notes</a>
+                    {% if my_object.last_check %}
+                        {{ my_object.last_check|timestamp|date:'Y-m-d H:i' }}
+                         <span class="pull-right">({{ my_object.last_check|timestamp|timesince  }} ago)</span>
+                    {% else %}
+                        check has never been executed.
                     {% endif %}
-                    {% if my_object.action_url_expanded %}
-                        <a href="{{ my_object.action_url_expanded }}">actions</a>
+                </td>
+            </tr>
+            <tr>
+                <td>Next Check</td>
+                <td>
+                    {% if my_object.next_check %}
+                        {{ my_object.next_check|timestamp|date:'Y-m-d H:i' }}
+                        <span class="pull-right">({{ my_object.next_check|timestamp|timeuntil }} from now)</span>
+                    {% else %}
+                        Check is not scheduled to be executed.
                     {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td>Check Period</td>
+                <td>
+                    {% if my_object.check_period %}
+                    <a href="{% url edit_by_shortname "timeperiod" my_object.check_period %}">{{ my_object.check_period }}</a>
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                    <span class="pull-right">
+                        (currently {% if my_object.in_check_period %}inside{% else %}outside{% endif %} check_period)
+                    </span>
+                </td>
+            </tr>
+            <tr>
+                <td>Notification Period</td>
+                <td>
+                    {% if my_object.notification_period %}
+                    <a href="{% url edit_by_shortname "timeperiod" my_object.notification_period %}">{{ my_object.notification_period }}</a>
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                    <span class="pull-right">
+                        (currently {% if my_object.in_notification_period %}inside{% else %}outside{% endif %} notification period)
+                    </span>
+                </td>
             </tr>
             <tr>
                 <td>
@@ -172,13 +226,6 @@
                 <td id="effective_check_command"> Loading...</td>
             </tr>
             <tr></tr>
-            <tr>
-                <td>
-                <label for="id_notes">Notes</label>
-                </td>
-                <td>
-                    <textarea id="id_notes" cols="100" rows=3 name="notes">{{ my_object.notes }}</textarea></td>
-            </tr>
             <tr>
                 <td>
                     Downtimes:
@@ -207,13 +254,17 @@
                 </td>
                 <td>
                     <div id="downtimes">
-                        {% for i in my_object.comments_with_info %}
-                            <div class="alert alert-info">
-                                <button class="close delete_comment" data-dismiss="alert" title="Delete comment {{ i.0 }}" onclick="$.getJSON('{% url rest/status %}json/delete_comment?host_name={{ host_name }}&service_description={{ service_description }}&comment_id={{ i.0 }}');">
-                                    <i class="glyph-bin"></i></button>
-                                <i class="glyph-user"></i> <a href="{% url status.views.contact_detail i.1 %}">{{ i.1 }}</a>: {{ i.2 }}
-                            </div>
-                        {% endfor %}
+                        {% if my_object.comments_with_info %}
+                            {% for i in my_object.comments_with_info %}
+                                <div class="alert alert-info">
+                                    <button class="close delete_comment" data-dismiss="alert" title="Delete comment {{ i.0 }}" onclick="$.getJSON('{% url rest/status %}json/delete_comment?host_name={{ host_name }}&service_description={{ service_description }}&comment_id={{ i.0 }}');">
+                                        <i class="glyph-bin"></i></button>
+                                    <i class="glyph-user"></i> <a href="{% url status.views.contact_detail i.1 %}">{{ i.1 }}</a>: {{ i.2 }}
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>This {{ my_object.object_type }} has no comments.</p>
+                        {% endif %}
                         <div id="div_add_comment" class="alert alert-info">
                                     <input type="hidden" name="author" id="id_author" value="{{ remote_user }}"/>
                                     <input type="hidden" name="host_name" id="id_host_name" value="{{ host_name }}"/>
@@ -227,78 +278,27 @@
 
                 </td>
             </tr>
-        </table>
-
-        This check is executed every <a href="#">{{ my_object.check_interval }}</a> minutes.
-
-        When a problem occurs it will check <a href="#">{{ my_object.max_check_attempts }}</a> times
-
-        every <a href="#">{{ my_object.retry_interval }}</a> minutes before going to
-        hard state and start sending out notifications.
-        <table class=table>
-            <tr>
-                <td>Last Check</td>
-                <td>
-                    {% if my_object.last_check %}
-                        {{ my_object.last_check|timestamp|date:'Y-m-d H:i' }}
-                         ({{ my_object.last_check|timestamp|timesince  }} ago)
-                    {% else %}
-                        check has never been executed.
-                    {% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td>Next Check</td>
-                <td>
-                    {% if my_object.next_check %}
-                        {{ my_object.next_check|timestamp|date:'Y-m-d H:i' }}
-                        ({{ my_object.next_check|timestamp|timeuntil }} from now)
-                    {% else %}
-                        Check is not scheduled to be executed.
-                    {% endif %}
-                    <button class="pull-right btn btn-small">
-                        <i class="glyph-refresh" title="Recheck - Execute check immediately"> </i>
-                    </button>
-                </td>
-            </tr>
-            <tr>
-                <td>Check Period</td>
-                <td>
-                    {% if my_object.check_period %}
-                    <a href="{% url edit_by_shortname "timeperiod" my_object.check_period %}">{{ my_object.check_period }}</a></td>
-                    {% else %}
-                    Unknown
-                    {% endif %}
-            </tr>
-            <tr>
-                <td>Notification Period</td>
-                <td>
-                    {% if my_object.notification_period %}
-                    <a href="{% url edit_by_shortname "timeperiod" my_object.notification_period %}">{{ my_object.notification_period }}</a></td>
-                    {% else %}
-                    Unknown
-                    {% endif %}
-            </tr>
             <tr>
                 <td>Network Parents</td>
                 <td>
                     {% if network_parents %}
                         <table>
-                        <tbody>
-
-                        {% for parent_level in network_parents %}
-                            <tr>
-                                {% for parent in parent_level %}
-                                    <td>
-                                        <div class="alert state_{{ parent.state }}">
-                                            <a href="{% url status.views.status_detail %}?host_name={{ parent.name }}">{{ parent.name }}</a>
-                                        </div>
-                                    </td>
-                                {% endfor %}
-                            </tr>
-                        {% endfor %}
-                        </tbody>
+                            <tbody>
+                            {% for parent_level in network_parents %}
+                                <tr>
+                                    {% for parent in parent_level %}
+                                        <td>
+                                            <div class="alert state_{{ parent.state }}">
+                                                <a href="{% url status.views.status_detail %}?host_name={{ parent.name }}">{{ parent.name }}</a>
+                                            </div>
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                            </tbody>
                         </table>
+                    {% else %}
+                        This {{ my_object.object_type }} has no configured network parents.
                     {% endif %}
             </tr>
         </table>
@@ -307,7 +307,8 @@
     <div class="tab-pane" id="custom_variables">
         Some checks have custom variables defined. These can be defined for example to define warning/critical thresholds
         for custom plugins.
-        <p></p>
+        <p>
+        </p>
         {% if my_object.custom_variables %}
         <table class="table table-condensed">
             <tr>
@@ -355,6 +356,8 @@
             </table>
         {% else %}
         {% endif %}
+        See also <a href="{% url adagios.misc.views.edit_check_command %}?host_name={{ host_name }}&service_description={{ service_description }}&check_command={{ my_object.check_command }}">Configure check command</a>
+
 
     </div>
     <div class="tab-pane" id="events">
@@ -434,6 +437,24 @@
         </ul>
     {% endif %}
 
+    <h5>External Links</h5>
+    <ul class="nav nav-list">
+        {% if my_object.action_url %}
+            <li><a href="{{ my_object.action_url_expanded }}">Extra Actions</a></li>
+        {% endif %}
+
+        {% if my_object.notes_url %}
+            <li><a href="{{ my_object.notes_url_expanded }}">Extra Notes</a></li>
+        {% endif %}
+
+        {% if my_object.host_action_url %}
+            <li><a href="{{ my_object.host_action_url_expanded }}">Host Actions</a></li>
+        {% endif %}
+
+        {% if my_object.host_notes_url %}
+            <li><a href="{{ my_object.host_notes_url_expanded }}">Host Notes</a></li>
+        {% endif %}
+    </ul>
     {% if hostgroup_name %}
         {% if hostgroups %}
             <h5>Is a member of hostgroup:</h5>
@@ -630,44 +651,14 @@
 
         });
 
-
-        // Image preview ability
-
-        this.imagePreview = function(){
-            /* CONFIG */
-
-            xOffset = 10;
-            yOffset = 30;
-
-            // these 2 variable determine popup's distance from the cursor
-            // you might want to adjust to get the right result
-
-            /* END CONFIG */
-            $("a.preview").hover(function(e){
-                        this.t = this.title;
-                        this.title = "";
-                        var c = (this.t != "") ? "<br/>" + this.t : "";
-                        $("body").append("<p id='preview'><img src='"+ this.href +"' alt='Image preview' />"+ c +"</p>");
-                        $("#preview")
-                                .css("top",(e.pageY - xOffset) + "px")
-                                .css("left",(e.pageX + yOffset) + "px")
-                                .fadeIn("fast");
-                    },
-                    function(){
-                        this.title = this.t;
-                        $("#preview").remove();
-                    });
-            $("a.preview").mousemove(function(e){
-                $("#preview")
-                        .css("top",(e.pageY - xOffset) + "px")
-                        .css("left",(e.pageX + yOffset) + "px");
-            });
-        };
-
-
-        // starting the script on page load
-        $(document).ready(function(){
-            imagePreview();
+        // Perfomance Graph Preview on hover
+        $("a.preview").popover({
+            placement: 'top',
+            trigger: 'hover',
+            template: '<div class="popover"><div class="arrow"></div><div class="popover-inner" style="width: 600px"><h3 class="popover-title"></h3><div class="popover-content" style="min-height: 200px"><p></p></div></div></div>',
+            content: function() {
+                return "<img src='"+ $(this)[0].href +"' alt='Image preview' />";
+            }
         });
     </script>
 
