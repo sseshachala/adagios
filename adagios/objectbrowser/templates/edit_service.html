@@ -43,11 +43,52 @@
                 </div>
 
                 <div class="tab-pane" id="monitoring">
-                    {% if command_line and form.host_name.value and form.register != '0' %}
-                        <pre>{{ command_line }}</pre>
-                    {% endif %}
-                    <fieldset>
-                        {% include "bootstrap_field.html" with field=form.check_command %}
+                    <div class="control-group">
+                        <label class="control-label" for="check_command">
+                            Check Command
+                        </label>
+                        <div class="controls" id="check_command">
+                            <input id="check_command_actual_entry" type="hidden" name="check_command" value="{{ form.check_command.value }}"/>
+                            <select style="width: 500px;" data-placeholder="Please select a check command"  id="check_command_select">
+                                <option value=""></option>
+                                {% for i in command_names %}
+                                    <option value="{{ i }}" {% if i == check_command %}selected="selected"{% endif %}>{{ i }}</option>
+                                {% endfor %}
+                            </select>
+                            <table style="margin-left: 10px; margin-top: 5px; min-width: 495px;">
+                                <tbody id="check_command_argument_table"></tbody>
+                                <tbody id="service_macros_table"></tbody>
+                                <tbody id="other_attributes_table"></tbody>
+                            </table>
+
+                            <label class="help-block">Check command is a previously defined command, that runs the actual plugin. The input boxes below are automatically generated based on what check command you select. In the command_line previews below you can see the actual command that nagios will run.</label>
+                        </div>
+
+                    </div>
+
+
+
+                    <div id="check_command_editor_tables">
+                        <div class="control-group">
+                            <label class="control-label" for="original_command_line_div">
+                                Command Line
+                            </label>
+                            <div class="controls" id="original_command_line_div">
+                                <pre  id="original_command_line"></pre>
+                            </div>
+                        </div>
+
+
+                        <div class="control-group">
+                            <label class="control-label" for="effective_command_line">
+                                Expanded Command Line
+                            </label>
+                            <div class="controls" id="effective_command_line">
+                                <pre id="command_line_preview">Loading...</pre>
+                            </div>
+                        </div>
+
+                    </div>
                         {% include "bootstrap_field.html" with field=form.max_check_attempts %}
                         {% include "bootstrap_field.html" with field=form.check_interval %}
                         {% include "bootstrap_field.html" with field=form.active_checks_enabled %}
@@ -119,6 +160,29 @@
                     if ( $('div.tab-pane#macros_tab fieldset').children().length ) {
                         $('li#macros_li').show();
                     }
+
+
+                    // Activate a clever check_command_editor
+
+                    editor = adagios.objectbrowser.CheckCommandEditor( {
+                        host_name: "{{ my_object.host_name }}",
+                        check_command: "{{ check_command }}",
+                        name: "{{ my_object.name }}",
+                        service_description : "{{ my_object.service_description }}"
+                    });
+                    editor.generate_input_fields();
+                    // When check_command is changed, lets recreate the input fields:
+                    $("#check_command_select").change( function() {
+                        editor.check_command = $('#check_command_select').find(":selected").text();
+                        editor.generate_input_fields();
+                    });
+
+                    // When the special save button is called, we call save
+                    $("#check_command_save_button").click( function() {
+                        editor.save_check_command();
+                    });
+
+
                 }
         );
     </script>

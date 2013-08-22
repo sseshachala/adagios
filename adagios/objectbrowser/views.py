@@ -28,7 +28,7 @@ from pynag import Model
 from pynag.Parsers import status
 
 from adagios import settings
-from forms import *
+from adagios.objectbrowser.forms import *
 
 def home(request):
     return redirect('adagios')
@@ -125,7 +125,7 @@ def geek_edit( request, object_id ):
 
     c['geek_edit'] = form
     # Lets return the user to the general edit_object form
-    return HttpResponseRedirect( reverse('objectbrowser.views.edit_object', kwargs={'object_id':o.get_id()} ) )
+    return HttpResponseRedirect( reverse('edit_object', kwargs={'object_id':o.get_id()} ) )
 
 def advanced_edit(request, object_id):
     ''' Handles POST only requests for the "advanced" object edit form. '''
@@ -210,7 +210,7 @@ def edit_object( request, object_id=None, object_type=None, shortname=None):
             try:
                 c['form'].save()
                 m.append("Object Saved to %s" % o['filename'])
-                return HttpResponseRedirect( reverse('objectbrowser.views.edit_object', kwargs={'object_id':o.get_id()} ) )
+                return HttpResponseRedirect( reverse('edit_object', kwargs={'object_id':o.get_id()} ) )
             except Exception, e:
                 c['errors'].append(e)
         else:
@@ -308,8 +308,19 @@ def _edit_service( request, c):
     try: c['effective_hostgroups'] = service.get_effective_hostgroups()
     except KeyError, e: c['errors'].append( "Could not find hostgroup: %s" % str(e))
 
-    try: c['effective_command'] = service.get_effective_check_command()
-    except KeyError, e: c['errors'].append( "Could not find check_command: %s" % str(e))
+    try:
+        c['effective_command'] = service.get_effective_check_command()
+    except KeyError, e:
+        if service.check_command is not None:
+            c['errors'].append( "Could not find check_command: %s" % str(e))
+        elif service.register != '0':
+            c['errors'].append( "You need to define a check command")
+
+    # For the check_command editor, we inject current check_command and a list of all check_commands
+    c['check_command'] = (service.check_command or '').split("!")[0]
+    c['command_names'] = map(lambda x: x.get("command_name",''), Model.Command.objects.all)
+    if c['check_command'] in (None,'','None'):
+        c['check_command'] = ''
 
     return render_to_response('edit_service.html', c, context_instance = RequestContext(request))
 
@@ -383,9 +394,13 @@ def _edit_host( request, c):
     try: c['effective_contactgroups'] = host.get_effective_contact_groups()
     except KeyError, e: c['errors'].append( "Could not find contact_group: %s" % str(e))
 
-    try: c['effective_command'] = host.get_effective_check_command()
-    except KeyError, e: pass
-
+    try:
+        c['effective_command'] = host.get_effective_check_command()
+    except KeyError, e:
+        if host.check_command is not None:
+            c['errors'].append( "Could not find check_command: %s" % str(e))
+        elif host.register != '0':
+            c['errors'].append( "You need to define a check command")
     try:
         s = status()
         s.parse()
@@ -416,7 +431,11 @@ def config_health( request  ):
     services_without_icon_image = []
     c['booleans']['Nagios Service has been reloaded since last configuration change'] = not Model.config.needs_reload()
     c['booleans']['Adagios configuration cache is up-to-date'] = not Model.config.needs_reparse()
-    c['errors'] = Model.config.errors
+    for i in Model.config.errors:
+        if i.item:
+            Class = Model.string_to_class[i.item['meta']['object_type']]
+            i.model = Class(item=i.item)
+    c['parser_errors'] = Model.config.errors
     try:
         import okconfig
         c['booleans']['OKConfig is installed and working'] = okconfig.is_valid()
@@ -612,7 +631,7 @@ def delete_object(request, object_id):
             c['form'] = f = DeleteObjectForm(pynag_object=my_obj, data=request.POST)
             if f.is_valid():
                 f.delete()
-            return HttpResponseRedirect( reverse('objectbrowser.views.list_object_types' ) + "#" + my_obj.object_type )
+            return HttpResponseRedirect( reverse('objectbrowser' ) + "#" + my_obj.object_type )
         except Exception, e:
             c['errors'].append( e )
     return render_to_response('delete_object.html', c, context_instance = RequestContext(request))
@@ -646,17 +665,25 @@ def add_object(request, object_type):
     c['errors'] = []
     c['object_type'] = object_type
 
-    if request.method == 'POST':
+    if request.method == 'GET' and object_type == 'template':
+        c['form'] = AddTemplateForm(initial=request.GET)
+    elif request.method == 'GET':
+        c['form'] = AddObjectForm(object_type,initial=request.GET)
+    elif request.method == 'POST' and object_type == 'template':
+        c['form'] = AddTemplateForm(data=request.POST)
+    elif request.method == 'POST':
         c['form'] = AddObjectForm(object_type, data=request.POST)
+    else:
+        c['errors'].append("Something went wrong while calling this form")
+
+    # This is what happens in post regardless of which type of form it is
+    if request.method == 'POST' and 'form' in c:
         # If form is valid, save object and take user to edit_object form.
         if c['form'].is_valid():
             c['form'].save()
             object_id = c['form'].pynag_object.get_id()
-            return HttpResponseRedirect( reverse('objectbrowser.views.edit_object', kwargs={'object_id':object_id} ), )
+            return HttpResponseRedirect( reverse('edit_object', kwargs={'object_id':object_id} ), )
         else:
             c['errors'].append('Could not validate form input')
-    elif request.method == 'GET':
-        c['form'] = AddObjectForm(object_type,initial=request.GET)
-
 
     return render_to_response('add_object.html', c, context_instance = RequestContext(request))

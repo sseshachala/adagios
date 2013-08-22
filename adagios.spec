@@ -4,10 +4,10 @@
 %endif
 
 %define name adagios
-%define release 2
+%define release 1
 
 Name: adagios
-Version: 1.2.1
+Version: 1.2.3
 Release: %{release}%{?dist}
 Summary: Web Based Nagios Configuration
 Group: Applications/Internet
@@ -21,7 +21,7 @@ Prefix: %{_prefix}
 BuildRequires: python2-devel
 BuildRequires: python-setuptools
 
-Requires: pynag >= 0.4.5
+Requires: pynag >= 0.5.0
 Requires: httpd
 Requires: mod_wsgi
 Requires: Django
@@ -38,12 +38,10 @@ sed -i "s/__version__=.*/__version__='$VERSION'/" adagios/__init__.py
 
 %build
 python setup.py build
-sed "s/python2.7/python%{python_version}/" -i adagios/apache/adagios.conf
 
 %install
 python setup.py install -O1 --root=$RPM_BUILD_ROOT --record=INSTALLED_FILES
 #chmod a+x %{buildroot}%{python_sitelib}/adagios/manage.py
-sed -i 's|/usr/lib/python2.7/site-packages|%{python_sitelib}|g' %{buildroot}%{python_sitelib}/adagios/apache/adagios.conf
 mkdir -p %{buildroot}%{_sysconfdir}/httpd/conf.d/
 install %{buildroot}%{python_sitelib}/adagios/apache/adagios.conf %{buildroot}%{_sysconfdir}/httpd/conf.d/adagios.conf
 
@@ -69,6 +67,10 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0440, root, root) %config(noreplace) %{_sysconfdir}/sudoers.d/adagios
 
 %changelog
+* Thu Jul 04 2013 Pall Sigurdsson <palli@opensource.is> 1.2.3-1
+- Fix check_command editor when effective command line returns null
+  (palli@opensource.is)
+
 * Fri May 24 2013 Your Name <you@example.com> 1.2.1-2
 - Remove remaining javascript alerts alert() (palli@opensource.is)
 - Host aliases displayed in status detail (palli@opensource.is)

@@ -8,6 +8,7 @@ USE_TZ = True
 import os
 from glob import glob
 from warnings import warn
+import string
 
 djangopath = os.path.dirname(__file__)
 
@@ -67,9 +68,6 @@ MEDIA_URL = 'media/'
 # trailing slash.
 # Examples: "http://foo.com/media/", "/media/".
 #ADMIN_MEDIA_PREFIX = '/media/'
-
-# Make this unique, and don't share it with anybody.
-SECRET_KEY = 'kq_4#kcvpb3oen80nsu&xb1+4)ep33u1l37x37y9_k-^aic5s6'
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
@@ -132,17 +130,32 @@ enable_githandler=False
 enable_loghandler = False
 enable_authorization = False
 enable_status_view = True
+enable_pages_view = True
+enable_bi = True
 warn_if_selinux_is_active = True
 destination_directory="/etc/nagios/adagios/"
 administrators="nagiosadmin,@users"
 pnp_url = "/pnp4nagios"
 pnp_filepath = "/usr/share/nagios/html/pnp4nagios/index.php"
 include=""
+django_secret_key = ""
+
+# pages module, path to extra pages the user can upload
+extra_pages = "/etc/adagios/pages.d"
 
 plugins = {}
 
-# Load config files from /etc/adagios/
+# Load config files from /etc/adagios
+# Adagios uses the configuration file in /etc/adagios/adagios.conf by default.
+# If it doesn't exist you should create it. Otherwise a adagios.conf will be
+# created in the django project root which should be avoided.
 adagios_configfile = "/etc/adagios/adagios.conf"
+
+# Try to save a configuration file into the project djangopath
+if not os.path.exists(adagios_configfile):
+    adagios_configfile = "%s/adagios.conf" % djangopath
+    open(adagios_configfile, "a").close()
+
 try:
     execfile(adagios_configfile)
     # if config has any default include, lets include that as well
@@ -158,8 +171,36 @@ except IOError, e:
         # TODO: Should this go someplace?
         warn('Unable to open %s: %s' % (adagios_configfile, e.strerror))
 
+try:
+    from django.utils.crypto import get_random_string
+except ImportError:
+    def get_random_string(length, stringset=string.ascii_letters+string.digits+string.punctuation):
+        '''
+        Returns a string with `length` characters chosen from `stringset`
+        >>> len(get_random_string(20)) == 20
+        '''
+        return ''.join([stringset[i%len(stringset)] \
+            for i in [ord(x) for x in os.urandom(length)]])
+
+if not django_secret_key:
+    chars = 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)'
+    SECRET_KEY = get_random_string(50, chars)
+    try:
+        fh = open(adagios_configfile, "a")
+        fh.write("\n# Automaticly generated secret_key\ndjango_secret_key = '%s'\n"
+            % SECRET_KEY)
+        fh.close()
+    except Exception, e:
+        raise Exception("Unable to save generated django_secret_key: " % e)
+else:
+    SECRET_KEY = django_secret_key
+
 if enable_status_view:
   plugins['status'] = 'adagios.status'
+if enable_pages_view:
+  plugins['pages'] = 'adagios.pages'
+if enable_bi:
+  plugins['bi'] = 'adagios.bi'
 
 for k,v in plugins.items():
     INSTALLED_APPS.append( v )

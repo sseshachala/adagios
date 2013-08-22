@@ -1,127 +1,126 @@
 {% extends "base_status.html" %}
 
-{% block title %}Audit Log{% endblock %}
-{% block smallheader %}audit{% endblock %}
-{% block largeheader %}log{% endblock %}
+{% block title %}Edit Check Command{% endblock %}
+{% block smallheader %}edit{% endblock %}
+{% block largeheader %}Check Command{% endblock %}
 {% block nav1 %}misc{% endblock %}
 
+{% block toolbar %}
+{% endblock %}
 {% block content %}
-    <div >
-        <pre  id="original_command_line"></pre>
-        <pre id="command_line_preview">Loading...</pre>
-    </div>
-        <div id="check_command_parameters"></div>
-    <style>
-    .macro_in_a_text {
-        color: lightblue;
-        font-size:  80%;
-        font-weight: bold;
-    }
-    #original_command_line {
-        //white-space: nowrap;
-    }
-    </style>
+
+    {% if form %}
+        <div class=row>
+            <div class=span11>
+            {% if form.results %}
+                <h4>Parsed Plugin Output</h4> <a href="{% url misc.views.test  %}">Click here for a new paste</a>
+                <table class="table table-condensed" border=1>
+                    <tr>
+                        <td>Plugin Summary</td>
+                        <td>{{ form.results.summary }}</td>
+                    </tr>
+                    <tr>
+                        <td>Long Output</td>
+                        <td>{{ form.results.long_output }}</td>
+                    </tr>
+                    <tr>
+                        <td>Parsed Performance Data</td>
+                        <td>
+                            {% if form.results.parsed_perfdata.metrics %}
+                                <table border=1 class=table style="border-color: #ffffff;" >
+                                    <tr>
+                                        <th></th>
+                                        <th>label</th>
+                                        <th>value</th>
+                                        <th>warn</th>
+                                        <th>crit</th>
+                                        <th>unit</th>
+                                        <th>min</th>
+                                        <th>max</th>
+                                        <th>pnp</th>
+                                    </tr>
+                                    {% for i in form.results.parsed_perfdata.metrics %}
+                                        <tr>
+                                            <td class="nowrap"><div class="circle state_{{ i.get_status }}"> </div></td>
+                                            <td>{{ i.label }}</td>
+                                            <td>{{ i.value }} </td>
+                                            <td>{{ i.warn }}  </td>
+                                            <td>{{ i.crit }}  </td>
+                                            <td> {{ i.uom }}</td>
+                                            <td>{{ i.min }}   </td>
+                                            <td>{{ i.max }}   </td>
+                                            <td>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </table>
+                            {% else %}
+                                No valid performance data found in this plugin.
+                            {% endif %}
+
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Raw Performance Data</td>
+                        <td>{{ form.results.perfdata }}</td>
+                    </tr>
+
+                </table>
+            {% else %}
+            {% endif %}
+            </div>
+
+        </div>
+
+        <div class="row">
+            <div class="span11">
+
+            <!-- On get requests, let display a paste form -->
+            <form action="#" method="post" class="form-horizontal">{% csrf_token %}
+                    <h4>Paste the output of a nagios plugin below</h4>
+                    <hr>
+                    <textarea wrap="off" id="id_plugin_output" rows="10" class=span11 cols="80" name="plugin_output">test | load1=5</textarea>
+                    <hr>
+                    <button class="pull-right btn btn-success" type="submit">Save</button>
+            </form>
+            </div>
+
+        </div>
+
+
+
+
+        <style>
+            textarea{
+                display: block;
+                margin: 0px;
+                padding: 0px;
+                width: 500px;
+                height: 300px;
+            }
+        </style>
+
+
+
+    {% endif %}
+
 {% endblock %}
 
 {% block footer %}
     {{ block.super }}
 
-    <script src="{% url home %}rest/status.js"></script>
-    <script src="{% url home %}rest/pynag.js"></script>
-    <script src="{% url home %}rest/adagios.js"></script>
 
         <script>
         $(document).ready(function(){
-            // What happens when we hover over a macrotext
-            $(".macro_in_a_text").hover( function() { alert("hello"); });
 
-            // Get all parameters
-            populate_parameters();
+            editor = adagios.objectbrowser.CheckCommandEditor;
+            editor.host_name = "{{ host_name }}";
+            editor.check_command = "{{ check_command }}";
+            editor.service_description = "{{ service_description }}";
+            editor.generate_input_fields();
+
+
         });
-
-        function populate_parameters() {
-            my_data = {
-                "host_name": "{{ host_name }}",
-                "service_description": "{{ service_description }}",
-                "check_command": "{{ check_command }}"
-            };
-            // Update check_command_parameters div with result from this rest call:
-            check_command(my_data)
-                    .done( function(data) {
-                        // Generate a table, where each row has an input field with
-                        // a macroname for us
-                        input_html = '<table>';
-                        for (var i in data) {
-                            // Skip command line data
-                            if (i == 'original_command_line' || i == 'effective_command_line') {}
-                            else {
-                                input_html += '' +
-                                        '<tr><td>' + i + '</td>' +
-
-                                        '<td><input class="check_command_parameter" onkeyup="preview_command_line();" type="text" class="span11" name="' + i + '" value="' + data[i] + '">' +
-                                        '</td></tr>'
-                                        ;
-                            }
-                        }
-                        input_html += "</table>"
-                        $('#check_command_parameters').html(input_html);
-
-                        // Preview the command line
-                        preview_command_line();
-                    })
-                    .fail( function(data) {
-                        var result = data;
-                        alert("fail" + data);
-                    });
-
-
-
-
-        }
-
-        function preview_command_line() {
-            // whenever check_command_parameters is changed, lets update the check_command preview
-            my_data = {
-                "host_name": "{{ host_name }}",
-                "service_description": "{{ service_description }}",
-                "check_command": "{{ check_command }}"
-            };
-            $(".check_command_parameter").each( function() {
-                var item = $(this)[0];
-                my_data[item.name] = item.value;
-            });
-
-            // Update check_command_parameters div with result from this rest call:
-            check_command(my_data)
-                    .done( function(data) {
-                        original_command_line = data['original_command_line'];
-                        $('#original_command_line').html( original_command_line );
-
-                        macronames = original_command_line.match(/\$.*?\$/g);
-                        for (var i in macronames) {
-                            macroname = macronames[i];
-                            macrovalue = data[macroname];
-                            new_str = "<span "
-                                    + "class='macro_in_a_text' title='value="
-                                    + macrovalue
-                                    + "'>"
-                                    + macroname
-                                    + "</span>";
-                            original_command_line = original_command_line.replace(macroname,new_str);
-                        }
-
-                        $('#original_command_line').html( original_command_line );
-
-                        effective_command_line = data['effective_command_line'];
-                        $('#command_line_preview').html( effective_command_line );
-                    })
-                    .fail( function(data) {
-                        var result = data;
-                        $('#command_line_preview').html("Something went wrong. Our awesome webservice returned an error")
-                    });
-
-
-        }
 
         </script>
 

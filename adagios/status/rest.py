@@ -1,7 +1,8 @@
 
 """
 
-Convenient stateless functions for pynag. This module is used by the /rest/ interface of adagios.
+Convenient stateless functions for the status module. These are meant for programs to interact
+with status of Nagios.
 
 """
 
@@ -13,6 +14,8 @@ import pynag.Utils
 import adagios.status.utils
 import pynag.Parsers
 import collections
+from pynag.Utils import PynagError
+
 
 def hosts(fields=None, *args, **kwargs):
     """ Get List of hosts. Any parameters will be passed straight throught to pynag.Utils.grep()
@@ -330,14 +333,79 @@ def state_history(start_time=None, end_time=None, host_name=None, service_descri
     l = pynag.Parsers.LogFiles()
     return l.get_state_history(start_time=start_time, end_time=end_time,host_name=host_name, service_description=service_description)
 
+def _get_service_model(host_name, service_description=None):
+    """ Return one pynag.Model.Service object for one specific service as seen
+
+    from status point of view. That means it will do its best to return a service
+    that was assigned to hostgroup but the caller requested a specific host.
+
+    Returns:
+        pynag.Model.Service object
+    Raises:
+        KeyError if not found
+    """
+    try:
+        return pynag.Model.Service.objects.get_by_shortname("%s/%s" % (host_name, service_description))
+    except KeyError,e:
+        host = pynag.Model.Host.objects.get_by_shortname(host_name)
+        for i in host.get_effective_services():
+            if i.service_description == service_description:
+                return i
+        raise e
+
 def command_line(host_name,service_description=None):
     """ Returns effective command line for a host or a service (i.e. resolves check_command)
     """
     try:
-        if service_description is None or service_description=='':
+        if service_description in (None,'','_HOST_'):
             obj = pynag.Model.Host.objects.get_by_shortname(host_name)
         else:
-            obj = pynag.Model.Service.objects.get_by_shortname("%s/%s" % (host_name, service_description))
-        return obj.get_effective_command_line()
+            obj = _get_service_model(host_name,service_description)
+        return obj.get_effective_command_line(host_name=host_name)
     except KeyError:
         return "Could not resolve commandline. Object not found"
+
+def update_check_command(host_name,service_description=None,**kwargs):
+    """ Saves all custom variables of a given service
+    """
+    try:
+        for k,v in kwargs.items():
+            if service_description is None or service_description=='':
+                obj = pynag.Model.Host.objects.get_by_shortname(host_name)
+            else:
+                obj = pynag.Model.Service.objects.get_by_shortname("%s/%s" % (host_name, service_description))
+            if k.startswith("$_SERVICE") or k.startswith('$ARG'):
+                obj.set_macro(k, v)
+                obj.save()
+        return "Object saved"
+    except KeyError:
+        raise Exception("Object not found")
+
+
+def get_business_process_names():
+    """ Returns all configured business processes
+    """
+    import adagios.businessprocess
+    return map(lambda x: x.name, adagios.businessprocess.get_all_processes())
+
+
+def get(object_type, *args, **kwargs):
+    livestatus_arguments = pynag.Utils.grep_to_livestatus(*args, **kwargs)
+    if not object_type.endswith('s'):
+        object_type = object_type + 's'
+    print kwargs
+    if 'name__contains' in kwargs and object_type == 'services':
+        print "ok fixing service"
+        name = str(kwargs['name__contains'])
+        livestatus_arguments = filter(lambda x: x.startswith('name'), livestatus_arguments)
+        livestatus_arguments.append('Filter: host_name ~ %s' % name)
+        livestatus_arguments.append('Filter: description ~ %s' % name)
+        livestatus_arguments.append('Or: 2')
+    livestatus = pynag.Parsers.mk_livestatus()
+    print livestatus_arguments
+    results = livestatus.query('GET %s' % object_type, *livestatus_arguments)
+
+    if object_type == 'service':
+        for i in results:
+            i['name'] = i.get('host_name') + "/" + i.get('description')
+    return results

@@ -14,18 +14,18 @@ from django import forms
 import os
 my_module = None
 
-1
-def _load(module_name):
+
+def _load(module_path):
     #global my_module
     #if not my_module:
-    my_module = __import__(module_name, None, None, [''])
+    my_module = __import__(module_path, None, None, [''])
     return my_module
 
 
 
 @csrf_exempt
-def handle_request(request, module_name, attribute, format):
-    m = _load(module_name)
+def handle_request(request, module_name, module_path, attribute, format):
+    m = _load(module_path)
     # TODO: Only allow function calls if method == POST
     members = {}
     for k,v in inspect.getmembers(m):
@@ -79,8 +79,8 @@ def handle_request(request, module_name, attribute, format):
         raise BaseException("Unsupported format: '%s'. Valid formats: json xml txt" % format)
     return HttpResponse(result, mimetype=mimetype)
 
-def index( request, module_name ):
-    m = _load(module_name)
+def index( request, module_name, module_path ):
+    m = _load(module_path)
     gets,puts = [],[]
     blacklist = ( 'argv', 'environ', 'exit', 'path', 'putenv', 'getenv', )
     for k,v in inspect.getmembers(m):
@@ -93,15 +93,15 @@ def index( request, module_name ):
         else:
             gets.append( k )
     c = {}
-    c['module_name'] = module_name
+    c['module_path'] = module_path
     c['gets'] = gets
     c['puts'] = puts
     c['module_documenation'] = inspect.getdoc(m)
     return render_to_response('index.html', c, context_instance = RequestContext(request))
 
-def javascript(request, module_name):
-    """ Create a javascript library that will wrap around module_name module """
-    m = _load(module_name)
+def javascript(request, module_name, module_path):
+    """ Create a javascript library that will wrap around module_path module """
+    m = _load(module_path)
     variables,functions = [],[]
     blacklist = ( 'argv', 'environ', 'exit', 'path', 'putenv', 'getenv', )
     members = {}
@@ -118,6 +118,7 @@ def javascript(request, module_name):
         else:
             variables.append( k )
     c = {}
+    c['module_path'] = module_path
     c['module_name'] = module_name
     c['gets'] = variables
     c['puts'] = functions
@@ -128,7 +129,7 @@ def javascript(request, module_name):
     for i in functions:
         argspec = inspect.getargspec( members[i] )
         args,varargs,varkw,defaults = argspec
-        docstring = inspect.getdoc(i)
+        docstring = inspect.getdoc(members[i])
         if defaults is None:
             defaults = []
         else:
@@ -140,8 +141,6 @@ def javascript(request, module_name):
             argstring.append('%s=%s' % (tmp.pop(), default) )
         argstring.reverse()
         argstring = tmp + argstring
-        argstring = ','.join(argstring)
-
         members[i] = {}
         members[i]['args'] = args
         members[i]['argstring'] = ','.join(args)
